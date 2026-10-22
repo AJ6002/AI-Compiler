@@ -84,17 +84,13 @@ Do not deploy NiFi, Atlas, Gravitino, Kafka, Spark or Kubernetes merely to parse
 | Docker Desktop or Docker Engine | Local containers | Phase 0 | Verify Desktop organization licensing; Engine is an alternative on Linux |
 | Model API: one approved provider | Optional ambiguous-layout reasoning | Phase 8 | Usage-based; confirm contractual retention/residency before sending client data |
 | Self-hosted model | Alternative to model API | Phase 8 | Hardware/operations costs; validate model license and quality |
-| AWS S3 | Raw/artifact storage | Phase 11 | Storage, requests, encryption and transfer costs |
-| AWS ECS/Fargate | API and isolated parser tasks | Phase 11 | Compute/memory charges; benchmark task limits |
-| AWS RDS PostgreSQL | Metadata | Phase 11 | Instance, storage and backup charges |
-| AWS ECR | Container images | Phase 11 | Storage/scanning charges as applicable |
-| AWS Secrets Manager/KMS | Secrets and encryption | Phase 11 | Usage-based charges |
-| Temporal Cloud | Optional managed workflow service | Phase 11 | Commercial; self-hosted Temporal is an operational alternative |
 | Existing identity provider | Auth and project membership | Phase 10 | Reuse existing tenant system; do not invent parallel identities |
 | Security reviewer + industrial data steward | Independent assurance/labels | Before pilot | Engineering effort or external consulting; required role, not necessarily paid vendor |
 | Retention | Per artifact class | Before pilot | Raw uploads, staging artifacts, accepted packages, provenance, and logs may each need different retention windows. One line per class. |
+| AWS Cloud Services (S3, ECS, RDS, ECR, KMS) | DEFERRED | Post-Testing | Cloud deployment is explicitly deferred until the compiler is rigorously tested and benchmarked as an isolated service. |
 
-Do not purchase multiple model subscriptions, E2B, hosted document OCR, vector databases or agent frameworks before an explicit requirement and benchmark justify them. Do not treat free software as free operations. Exact cloud bills cannot be estimated responsibly before throughput, file sizes, concurrency, residency and retention are specified.
+> [!IMPORTANT]
+> **No Active Cloud Deployment:** All deployment to cloud providers (AWS ECS, S3, RDS, ECR, KMS, Temporal Cloud) is removed from active phases and deferred. The compiler must first be built, tested, and rigorously benchmarked entirely as a self-contained, isolated service (local Docker, PostgreSQL, and Temporal) before cloud deployment is scheduled. Do not purchase subscriptions or provision cloud infrastructure until service acceptance tests pass.
 
 ## 6. Repository layout
 
@@ -395,29 +391,42 @@ A CSV that passes does not prove Excel capability. An Excel that passes does not
 9. Emit an authenticated handoff event using an outbox/idempotent delivery design. Downstream verifies scope, checksums and contract before consuming.
 10. Keep REVIEW_REQUIRED artifacts visible to reviewers but unavailable to automated training.
 
+**Phase 10 acceptance test — zip batch:**
+Using a zip of at least 5 authorized workbooks from one client generation system, where at least one workbook contains a known defect (truncated time range, missing sheet, conflicting value), verify end to end:
+
+1. Job is accepted, raw source is stored immutably, and a SHA-256 is recorded.
+2. Reader inspects all 5 files and produces one structural representation per file.
+3. Planner reuses the shared recipe (all 5 match the same signature) and routes the defective file to review.
+4. Executor produces 4 per-file tables and one merged batch table.
+5. Validation gate returns batch-level `REVIEW_REQUIRED` with a specific per-file reason.
+6. Partial-batch publication policy is exercised and recorded (i.e., 4 files published, 1 held back, per whichever option was chosen in Phase 1).
+7. Artifact bundle contains: `manifest.json`, `handoff.json`, `validation-report.json`, `parsing-plan.json`, `metadata.json`, `tables/*.parquet`, `dictionaries/signals.parquet`, `provenance/source-map.parquet`.
+8. Handoff JSON records `assets_expected=5`, `assets_accepted=4`, `assets_missing_coverage=[defective]`, and a human-readable review item.
+9. Downstream (mock) AutoMLOps consumer rejects the bundle for training until review clears.
+10. Reviewer clears the defective file; bundle is republished; downstream accepts.
+
 Temporal's durable execution and replay requirements inform this design [web:247][web:242]. Its workflow sandbox is not a security boundary for parsing hostile files.
 
 **Verify:** kill a worker mid-job, retry publication and replay workflow histories; no duplicate accepted package or cross-tenant access.
-**Exit gate:** one upload can reach accepted Parquet, or an explainable review state, through the application.
+**Exit gate (revised):** One single-file upload and one zip-batch upload can each reach accepted Parquet, or an explainable review state, through the application. The zip-batch test includes a mixed-outcome batch (at least one accepted file, at least one review file) and exercises the partial-batch publication policy.
 
-### Phase 11 — Cloud deployment and isolation
+### Phase 11 — Service Isolation and Hardened Local Runtime (Cloud Deployment Deferred)
 
-**Outcome:** production-like AWS environment, separate from development.
+**Outcome:** service runs in fully isolated, non-root, resource-bounded containers with strict network boundaries and verified capacity limits; all cloud deployment is strictly removed/deferred until service testing passes.
+
+> [!IMPORTANT]
+> **No Active Cloud Deployment:** All deployment to cloud infrastructure (AWS ECS, S3, RDS, ECR, etc.) is removed from active phases and deferred. The compiler must first be thoroughly verified, benchmarked, and proven as a reliable, containerized service running locally/in test harnesses before any cloud deployment is scheduled or provisioned.
 
 0. Publish provisional capacity ceilings: max file size, max rows per sheet, max sheets per workbook, max zip size, max files per batch, max concurrent jobs per tenant. Provisional numbers exist to be revised after Phase 12; they are not marketing claims.
-1. Provision dev/staging/prod through reviewed infrastructure code.
-2. Create separate raw/staging/accepted storage permissions, encryption, retention and lifecycle policies.
-3. Deploy API/control workers separately from isolated parser tasks.
-4. Parser task: non-root, bounded CPU/memory/time/ephemeral storage, read-only source mount, private output area and no default egress.
-5. Do not expose cloud metadata credentials, host directories, production secrets or Docker socket to parsers.
-6. Use hardened runtime isolation according to threat model; ordinary containers alone are not a complete hostile-code boundary.
-7. Run model-network access through a separate approved path; parser readers do not need unrestricted internet.
-8. Deploy managed PostgreSQL, backups and tested restoration; choose managed Temporal or independently operated Temporal infrastructure.
-9. Add metrics, redacted logs, traces, alerts and per-tenant quotas.
-10. Run dependency/license/security scans; record SBOM and image digests.
+1. Run local parser and worker tasks with non-root isolation, bounded CPU/memory/time/ephemeral storage, read-only source mounts, and no default network egress.
+2. Ensure no host credentials, host directories, production secrets, or Docker socket are exposed to parsers.
+3. Use hardened runtime isolation (e.g. gVisor/container sandboxing principles) according to threat model; ordinary containers alone are not a complete hostile-code boundary.
+4. Enforce per-tenant quotas, structured error handling, and memory exhaustion safeguards.
+5. Run dependency, license, and security scans locally; record SBOM and image digests.
+6. Cloud deployment (AWS S3, ECS/Fargate, RDS) is explicitly deferred to post-Phase 12 operational rollout.
 
-**Verify:** unauthorized network/file access blocked; one oversized workbook cannot exhaust all workers; restoration is demonstrated.
-**Exit gate:** security and operations review completed with recorded residual risks.
+**Verify:** unauthorized network/file access blocked; one oversized workbook or malicious zip cannot exhaust all workers or host memory.
+**Exit gate:** isolated service sandbox and capacity ceilings verified locally before any cloud deployment is considered.
 
 ### Phase 12 — Benchmarks and release
 
@@ -428,6 +437,17 @@ Temporal's durable execution and replay requirements inform this design [web:247
 3. Measure end-to-end accepted correctness, false acceptances, unnecessary review, provenance coverage, p50/p95 latency, memory and cost.
 4. Group results by structural family and generation system. Averages must not hide a failing client family.
 4a. Report acceptance rate, false-acceptance rate, review rate, and p50/p95 latency **separately per corpus category** (see Phase 2 categories). An average that conceals a failing category is worse than no metric.
+
+**Zip-batch benchmark:**
+Run the full corpus (Phase 2 categories `excel_simple`, `excel_complex`, `excel_scattered`, `excel_formula`, `flat_csv_golden`) batched into zips of realistic size (e.g. 5–20 files per zip, grouped by client generation system). Measure:
+- Per-batch acceptance rate and false-acceptance rate.
+- Whether missing files in the batch are detected.
+- Whether cross-file value conflicts trigger `REVIEW_REQUIRED`.
+- Whether re-uploading overlapping periods is handled per the client contract.
+- p50/p95 latency and memory at batch scale.
+
+Report per client generation system, not averaged. A batch test that only succeeds on clean 1-file zips does not establish batch capability.
+
 5. Run concurrency, queue backpressure, malformed file, worker crash, restore and credential-isolation tests.
 6. Run shadow parsing against reviewed client outputs before downstream auto-consumption.
 7. Publish support matrix, operational limits, review policy and tested recipe inventory.
@@ -438,7 +458,7 @@ Temporal's durable execution and replay requirements inform this design [web:247
 9. Require zero known critical false acceptances in the release corpus, but never market a finite test as proof of zero future silent errors.
 10. Roll out per client generation system with rollback and a retained prior compiler/recipe version.
 
-**Exit gate:** signed acceptance evidence, operational runbooks, rollback rehearsal and downstream contract test.
+**Exit gate (revised):** Zip-batch benchmarks pass on the labeled corpus, per client generation system, with no failing category hidden by an average. Missing-file, cross-file conflict, and overlapping-period cases are demonstrated to trigger the correct status; signed acceptance evidence, operational runbooks, rollback rehearsal, and downstream contract test.
 
 ## 9. Canonical long-format schema
 
@@ -527,7 +547,7 @@ Do not claim success without executed tests. End with evidence and unresolved bl
 
 ## 15. Dependency order and staffing
 
-Hard order: contracts and corpus → admission/readers → structural discovery → executor → gate → recipe replay → application recovery → production qualification. Agent investigation depends on deterministic extraction and validation; it is not a shortcut around them. Infrastructure can be prepared in parallel after contracts stabilize. Reader research can proceed in parallel behind the same interface.
+Hard order: contracts and corpus → admission/readers → structural discovery → executor → gate → recipe replay → application recovery → production qualification. Agent investigation depends on deterministic extraction and validation; it is not a shortcut around them. Local container and test environments can be prepared in parallel after contracts stabilize; cloud deployment is explicitly deferred until release benchmarks pass. Reader research can proceed in parallel behind the same interface.
 
 Roles: implementation engineer; industrial data steward for labeling/semantics; independent reviewer for security and release; operations owner for deployment/recovery. One person may cover multiple roles during development, but independent review is needed before client production.
 
