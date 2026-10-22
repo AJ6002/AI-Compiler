@@ -1,0 +1,175 @@
+{
+  "catalog_id": "catalog_v1_0_0",
+  "schema_version": "1.0.0",
+  "tenant_id": "tenant_test",
+  "project_id": "project_test",
+  "fixtures": [
+    {
+      "fixture_id": "fix_csv_01",
+      "category": "flat_csv_golden",
+      "relative_path": "flat_csv_golden/compressor_golden.csv",
+      "sha256": "c51e0a62a547ae84d49e07317aac921d01c015374147bc7a1217244bb540586c",
+      "is_synthetic": true,
+      "expected_result_state": "ACCEPTED",
+      "expected_error_codes": [],
+      "expected_sheet_names": [],
+      "expected_row_count": 100,
+      "expected_column_count": 5,
+      "expected_signals": {
+        "PRESSURE": "COMP_1.PRESSURE",
+        "TEMPERATURE": "COMP_1.TEMPERATURE",
+        "FLOW_RATE": "COMP_1.FLOW_RATE"
+      },
+      "unit_sources": {
+        "PRESSURE": "client_contract",
+        "TEMPERATURE": "client_contract",
+        "FLOW_RATE": "client_contract"
+      },
+      "expected_observation_count": 100
+    },
+    {
+      "fixture_id": "fix_excel_simple_01",
+      "category": "excel_simple",
+      "relative_path": "excel_simple/simple_table_ltds.xlsx",
+      "sha256": "eb404b1fcbd4c9cc9a89402360fea949049e07550edffa08576d280622e79845",
+      "is_synthetic": true,
+      "expected_result_state": "ACCEPTED",
+      "expected_error_codes": [],
+      "expected_sheet_names": [
+        "SimpleReadings"
+      ],
+      "expected_row_count": 50,
+      "expected_column_count": 9,
+      "expected_signals": {
+        "SUCTION_PRESS": "COMP_A.SUCTION_PRESSURE",
+        "DISCHARGE_PRESS": "COMP_A.DISCHARGE_PRESSURE"
+      },
+      "unit_sources": {
+        "SUCTION_PRESS": "header_row",
+        "DISCHARGE_PRESS": "header_row"
+      },
+      "expected_observation_count": 50
+    },
+    {
+      "fixture_id": "fix_excel_complex_01",
+      "category": "excel_complex",
+      "relative_path": "excel_complex/merged_equipment_headers.xlsx",
+      "sha256": "e8c3dd0f852b255a2d4dfa62840bedb3384c248f338b0c3b8f13cf4ff16d3318",
+      "is_synthetic": true,
+      "expected_result_state": "ACCEPTED",
+      "expected_error_codes": [],
+      "expected_sheet_names": [
+        "MergedHeaders"
+      ],
+      "expected_row_count": 20,
+      "expected_column_count": 5,
+      "expected_signals": {
+        "DISPENSER_1.HOSE_A.PRESSURE": "DISPENSER_1.HOSE_A.PRESSURE",
+        "DISPENSER_2.HOSE_A.PRESSURE": "DISPENSER_2.HOSE_A.PRESSURE"
+      },
+      "unit_sources": {
+        "DISPENSER_1.HOSE_A.PRESSURE": "client_contract",
+        "DISPENSER_2.HOSE_A.PRESSURE": "client_contract"
+      },
+      "expected_observation_count": 20
+    },
+    {
+      "fixture_id": "fix_excel_scattered_01",
+      "category": "excel_scattered",
+      "relative_path": "excel_scattered/scattered_with_metadata.xlsx",
+      "sha256": "8bd6770c5e6ea15054f629b3059530738ea4322d9651155f4b17448ec2b74f35",
+      "is_synthetic": true,
+      "expected_result_state": "ACCEPTED",
+      "expected_error_codes": [],
+      "expected_sheet_names": [
+        "PlantReport"
+      ],
+      "expected_row_count": 20,
+      "expected_column_count": 3,
+      "expected_signals": {
+        "SUCTION_P": "PLANT.SUCTION_P",
+        "DISCHARGE_P": "PLANT.DISCHARGE_P"
+      },
+      "unit_sources": {
+        "SUCTION_P": "metadata_block",
+        "DISCHARGE_P": "metadata_block"
+      },
+      "expected_observation_count": 20
+    },
+    {
+      "fixture_id": "fix_excel_formula_01",
+      "category": "excel_formula",
+      "relative_path": "excel_formula/formula_stale_cache.xlsx",
+      "sha256": "b436515990829f27fd5648e7159c50d59ac23597d52586c91e5034039b7c0e1b",
+      "is_synthetic": true,
+      "expected_result_state": "REVIEW_REQUIRED",
+      "expected_error_codes": [
+        "ERR_VAL_UNRESOLVED_UNIT"
+      ],
+      "expected_sheet_names": [
+        "Calculations"
+      ],
+      "expected_row_count": 20,
+      "expected_column_count": 3,
+      "expected_signals": {},
+      "unit_sources": {},
+      "expected_observation_count": 20
+    },
+    {
+      "fixture_id": "fix_zip_mixed_01",
+      "category": "zip_mixed",
+      "relative_path": "zip_mixed/batch_5_compressors.zip",
+      "sha256": "736ed7fd9928be02ad5653226f1af92d9517cf6d340398703e547f6927684594",
+      "is_synthetic": true,
+      "expected_result_state": "REVIEW_REQUIRED",
+      "expected_error_codes": [
+        "ERR_STRUCT_MISSING_SHEET"
+      ],
+      "expected_sheet_names": [
+        "COMP_1",
+        "COMP_2",
+        "COMP_3",
+        "COMP_4"
+      ],
+      "expected_row_count": 80,
+      "expected_column_count": 3,
+      "expected_signals": {},
+      "unit_sources": {},
+      "expected_observation_count": 80
+    },
+    {
+      "fixture_id": "fix_fail_traversal_01",
+      "category": "failure_cases",
+      "relative_path": "failure_cases/traversal_attack.zip",
+      "sha256": "6b2e82c8e0a263909cc4cfd7fe6d72251664567f16c726fe7323b0a391f5c26b",
+      "is_synthetic": true,
+      "expected_result_state": "FAILED",
+      "expected_error_codes": [
+        "ERR_ADM_PATH_TRAVERSAL"
+      ],
+      "expected_sheet_names": [],
+      "expected_row_count": 0,
+      "expected_column_count": 1,
+      "expected_signals": {},
+      "unit_sources": {},
+      "expected_observation_count": 0
+    },
+    {
+      "fixture_id": "fix_fail_corrupt_02",
+      "category": "failure_cases",
+      "relative_path": "failure_cases/corrupted_signature.xlsx",
+      "sha256": "e80c763fe2d44bcefd8233e51717a8a5d554303c393f6c1aeed2e972b4de8f73",
+      "is_synthetic": true,
+      "expected_result_state": "FAILED",
+      "expected_error_codes": [
+        "ERR_ADM_FILE_CORRUPT"
+      ],
+      "expected_sheet_names": [],
+      "expected_row_count": 0,
+      "expected_column_count": 1,
+      "expected_signals": {},
+      "unit_sources": {},
+      "expected_observation_count": 0
+    }
+  ]
+}
