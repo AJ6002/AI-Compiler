@@ -11,10 +11,13 @@ The client's estimate that 99% of inputs are Excel is a workload assumption, not
 
 The compiler MUST NOT impute, remove outliers, engineer features, scale, encode, train, silently aggregate, or silently deduplicate. It MAY normalize explicit missing tokens to null while retaining the raw token and reason. It MUST NOT guess missing units, timezone, observation identity, formula freshness, or join relationships.
 
+Asset identity resolution (mapping `PNB950667` to AICONNEX's asset model) is out of scope for v1. The compiler emits the raw serial and routes to `REVIEW_REQUIRED` if the client contract requires a resolved asset and none is supplied. A future phase may add an asset-resolution step.
+
 Automation means approved generation systems run automatically while their signature and contract remain valid. A supervised first file does not guarantee all future files are safe.
 
 ## 2. Understand the moving parts
 
+- Generation system: the client-side software and process that produces the workbook. Operationally identified by a structural signature (sheet-name pattern, metadata key set, header-band shape, duplicate-column pattern, cadence). A new structural signature that survives all deterministic matching and requires review is evidence of a new generation system.
 - Reader: extracts native structure from a file.
 - Structural representation: records what the file contains before deciding what it means.
 - Parsing plan: JSON instructions describing explicit extraction and reshaping.
@@ -89,6 +92,7 @@ Do not deploy NiFi, Atlas, Gravitino, Kafka, Spark or Kubernetes merely to parse
 | Temporal Cloud | Optional managed workflow service | Phase 11 | Commercial; self-hosted Temporal is an operational alternative |
 | Existing identity provider | Auth and project membership | Phase 10 | Reuse existing tenant system; do not invent parallel identities |
 | Security reviewer + industrial data steward | Independent assurance/labels | Before pilot | Engineering effort or external consulting; required role, not necessarily paid vendor |
+| Retention | Per artifact class | Before pilot | Raw uploads, staging artifacts, accepted packages, provenance, and logs may each need different retention windows. One line per class. |
 
 Do not purchase multiple model subscriptions, E2B, hosted document OCR, vector databases or agent frameworks before an explicit requirement and benchmark justify them. Do not treat free software as free operations. Exact cloud bills cannot be estimated responsibly before throughput, file sizes, concurrency, residency and retention are specified.
 
@@ -129,6 +133,11 @@ aiconnex-compiler/
   benchmarks/
   docs/decisions/
   docs/runbooks/
+  tools/
+    exploration/                  # human workbench for authoring recipes
+      README.md
+      explore.py
+      Dockerfile
   infrastructure/local/
   infrastructure/aws/
 ```
@@ -180,6 +189,7 @@ Implement only the requested phase and report unresolved issues.
 7. Add local PostgreSQL and Temporal development services; keep raw artifacts in a mounted local directory through an ObjectStore interface.
 8. Add an empty `.env.example`, never actual secrets.
 9. Write an architecture decision record for each selected service.
+10. Add `tools/exploration/` — a local helper that opens an Excel file and prints: sheet names, merged ranges, candidate header bands, candidate data regions, duplicate column names, and a draft recipe. Read-only file access, no network, runs on the steward's machine, not part of the deployed service. Its output is a *draft* plan only; a steward reviews and promotes it.
 
 **Verify:** fresh checkout → dependency sync → tests → API health response; container services start and stop cleanly.
 **Exit gate:** another machine can reproduce the environment from README instructions.
@@ -189,13 +199,20 @@ Implement only the requested phase and report unresolved issues.
 
 **Outcome:** stable interfaces before interchangeable tools.
 
-1. Define versioned Pydantic/JSON schemas for UploadManifest, ClientContract, WorkbookStructure, ParsePlan, Recipe, ValidationReport and HandoffManifest.
+1. Define versioned Pydantic/JSON schemas for: `UploadManifest`, `ClientContract`, `SignalDictionary`, `AssetMap`, `ObservationId`, `WorkbookStructure`, `ParsePlan`, `Recipe`, `ValidationReport`, `HandoffManifest`.
 2. Add tenant/project scope and schema versions everywhere.
 3. Separate job execution states from result states. Execution: RECEIVED, INSPECTING, PLANNING, EXECUTING, VALIDATING, AWAITING_REVIEW, COMPLETED, FAILED, CANCELLED. Result: ACCEPTED, REVIEW_REQUIRED, UNSUPPORTED, FAILED.
 4. Define structured error codes and severity; include evidence references and remediation text.
 5. Define handling of partial results: never publish incomplete measurement tables as accepted.
 6. Declare accepted file formats/features and resource limits in configuration.
 7. Define accepted client-contract version and recipe version on every job.
+8. Define the partial-batch publication policy as an explicit decision record. For a batch where some files accept and others require review, choose and record one of:
+   - (a) publish accepted files; batch status = `REVIEW_REQUIRED` with a per-file manifest.
+   - (b) block the entire batch until all files clear.
+   - (c) publish accepted files as a separate dataset; route the rest to a follow-up job.
+   This is caller-visible API behavior and must be decided before Phase 10.
+9. Freeze the batch output contract. One upload produces one artifact bundle containing: batch-level table(s), per-file tables, one signal dictionary, one provenance map, one parsing plan (if all files share a recipe), per-file plans (if they don't), and a batch manifest listing every source file with its status.
+10. Define what one `observation_id` represents. Recommended: one observation = one `(asset_id, timestamp_utc, raw_source_row)` tuple, with all signal values from that row sharing the same observation ID. Record the decision. Downstream feature alignment depends on this.
 
 **Verify:** invalid schema versions, unknown plan operations and missing scope fail validation; round-trip serialization tests pass.
 **Exit gate:** all later adapters can target the same contracts.
@@ -207,9 +224,22 @@ Implement only the requested phase and report unresolved issues.
 1. Inventory authorized workbooks by client generation system and structural family.
 2. Include LTDS.xlsx as a basic table fixture. Independently reproduce its expected 1,158 records, nine source columns and repeated dates; do not rely solely on the earlier conversation as the oracle.
 3. Obtain merged-header, scattered-table, formula, duration and filename-date examples from actual clients.
-4. A data steward labels table regions, semantic header paths, metadata, time interpretation and expected output.
+4. A data steward labels table regions, semantic header paths, metadata, time interpretation and expected output. For each signal in each file, record `unit_source in {header_row, metadata_block, client_contract, unknown}`. A file whose units are not in the file and not in the contract routes to `REVIEW_REQUIRED`. `PNB950667` has no unit row anywhere — this case must be testable.
 5. Split onboarding/training examples from held-out files by generation system and time; prevent recipe tuning from leaking into the final test set.
 6. Add deliberately damaged and ambiguous fixtures. Mark generated mutations as test data, not real-client evidence.
+6a. Split the corpus into named categories, with separate metrics per category:
+
+| Category | What it tests |
+|---|---|
+| `flat_csv_golden` | Executor, plan operations, validation gate. Does not test segmentation or header reconstruction. |
+| `excel_simple` | Reader fidelity, one clean table per sheet. |
+| `excel_complex` | Merged headers, multi-row bands, duplicate column names. |
+| `excel_scattered` | Multiple tables + metadata blocks per sheet. |
+| `excel_formula` | Cached/missing caches, off-by-one. |
+| `zip_mixed` | Multi-file, multi-sheet, mixed quality. |
+| `failure_cases` | Corruption, encryption, zip bombs. |
+
+A CSV that passes does not prove Excel capability. An Excel that passes does not prove CSV handling.
 7. Store expected exclusions and expected REVIEW_REQUIRED results, not only expected accepted tables.
 8. Implement an evaluator that compares rows, values, identity, metadata, time range, provenance and acceptance decisions.
 
@@ -271,6 +301,7 @@ Implement only the requested phase and report unresolved issues.
 **Outcome:** reproducible transformations with no arbitrary code execution.
 
 1. Implement a JSON plan schema and allowlisted operations: select region, header hierarchy, rename, unpivot, explicit type/date/duration parsing, metadata extraction and approved join.
+1a. Each allowlisted operation gets a decision record defining: input domain, output schema, edge-case behavior, error codes. Specifically: what `flatten_headers` does when a merge spans two rows and three columns; what separator joins header rows; what happens on duplicate flattened names; what formats `parse_duration` accepts (e.g. `H:MM:SS`, `HH:MM:SS`, fractional seconds); how `formula_policy` handles missing cache vs present-but-stale cache.
 2. Reject unknown columns, invalid ranges, overlapping extraction and unsafe operations.
 3. Compile plans into deterministic reader/Arrow operations.
 4. Produce long format and linked provenance in bounded batches.
@@ -302,6 +333,8 @@ Implement only the requested phase and report unresolved issues.
 
 **Outcome:** unfamiliar layouts can be investigated safely.
 
+**Entry gate:** per client, a recorded and approved model-residency decision must exist before any model call is made. If unresolved, route only to a self-hosted model or defer Phase 8 for that client. Oil-and-gas and CCED clients will block third-party API calls; discovering this after the agent is built makes the agent unusable for the clients who need it most.
+
 1. Start with a provider-neutral ModelClient interface and a deterministic fake only for interface tests.
 2. Route only unresolved cases to the model; ordinary accepted recipes need no model call.
 3. Supply redacted structural summaries, bounded samples and source references—not full client archives by default.
@@ -327,9 +360,25 @@ Implement only the requested phase and report unresolved issues.
 6. Distinguish candidate match from safe applicability; run invariants and full contract validation every time.
 7. Validate a recipe on held-out workbooks before promotion.
 8. Version recipes immutably and support rollback/revocation. A revoked recipe must not silently remain cached.
+9a. Define the recipe sharing policy. Two tiers: **tenant-bound** (only that client) and **template** (candidate reusable across clients). Template promotion requires validation on held-out files from the target tenant before use. Cross-tenant reuse without per-tenant validation is forbidden — a recipe that works for client A may silently misread client B's near-identical layout.
+9b. Define the review queue SLA during supervised onboarding, e.g. median review time <= 1 business day. Track as an operational metric. Without this target, the "black box after onboarding" promise is not operationally credible.
 
 **Verify:** new rows still match when intended; changed group hierarchy, added signal and renamed sheet trigger approved adaptation or review.
 **Exit gate:** structural drift cannot silently reuse a stale plan.
+
+### Phase 9.5 — Batch assembly and reconciliation
+
+**Outcome:** multiple files, and multiple client uploads, assemble into one coherent dataset.
+
+1. Union accepted tables across files by `(asset_id, signal_id, timestamp_utc, observation_id)`.
+2. Detect missing files against the expected asset roster (from the client contract). Missing = batch-level `REVIEW_REQUIRED`, not silent.
+3. Detect overlapping periods when a client re-uploads. Resolve by explicit policy recorded in the client contract.
+4. Detect cross-file value disagreements on the same `(asset, signal, timestamp)`. Disagreement -> `REVIEW_REQUIRED`. Never silently dedupe.
+5. Emit batch-level `validation-report.json` with: files found, files missing, per-file status, per-signal coverage, anomaly counts.
+6. Re-run contract validation at the batch level — a file that passes alone may fail when the whole batch is checked.
+
+**Verify:** multi-file dataset catches duplicate-timestamp conflicts and unnotified missing assets.
+**Exit gate:** batch-level reconciliation succeeds before publication handoff.
 
 ### Phase 10 — API, workflows and AutoMLOps handoff
 
@@ -355,6 +404,7 @@ Temporal's durable execution and replay requirements inform this design [web:247
 
 **Outcome:** production-like AWS environment, separate from development.
 
+0. Publish provisional capacity ceilings: max file size, max rows per sheet, max sheets per workbook, max zip size, max files per batch, max concurrent jobs per tenant. Provisional numbers exist to be revised after Phase 12; they are not marketing claims.
 1. Provision dev/staging/prod through reviewed infrastructure code.
 2. Create separate raw/staging/accepted storage permissions, encryption, retention and lifecycle policies.
 3. Deploy API/control workers separately from isolated parser tasks.
@@ -377,10 +427,14 @@ Temporal's durable execution and replay requirements inform this design [web:247
 2. Compare discovery engines with identical source evidence and expected outputs.
 3. Measure end-to-end accepted correctness, false acceptances, unnecessary review, provenance coverage, p50/p95 latency, memory and cost.
 4. Group results by structural family and generation system. Averages must not hide a failing client family.
+4a. Report acceptance rate, false-acceptance rate, review rate, and p50/p95 latency **separately per corpus category** (see Phase 2 categories). An average that conceals a failing category is worse than no metric.
 5. Run concurrency, queue backpressure, malformed file, worker crash, restore and credential-isolation tests.
 6. Run shadow parsing against reviewed client outputs before downstream auto-consumption.
 7. Publish support matrix, operational limits, review policy and tested recipe inventory.
 8. Set measured release thresholds with the owner and client. No invented universal SLA.
+
+**Critical false acceptance:** any of — wrong signal identity, wrong unit, shifted or swapped column, wrong time range, wrong timezone, wrong observation identity — in a job that reached `ACCEPTED`. All other silent errors are non-critical. This definition makes the release gate enforceable.
+
 9. Require zero known critical false acceptances in the release corpus, but never market a finite test as proof of zero future silent errors.
 10. Roll out per client generation system with rollback and a retained prior compiler/recipe version.
 
