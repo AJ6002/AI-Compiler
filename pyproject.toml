@@ -12,6 +12,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "python-multipart>=0.0.12",
     "pyarrow>=26.0.0",
+    "tzdata>=2026.5",
 ]
 
 [project.optional-dependencies]
