@@ -6,6 +6,7 @@ from src.compiler.investigation.agent import (
     InvestigationBudget,
     InvestigationResult,
 )
+from src.compiler.investigation.contract import to_review_item, unwrap_for_executor
 from src.compiler.investigation.model_client import (
     DeterministicFakeModelClient,
     ModelClient,
@@ -32,4 +33,6 @@ __all__ = [
     "ModelResponse",
     "ResidencyPolicy",
     "check_model_residency_permission",
+    "to_review_item",
+    "unwrap_for_executor",
 ]

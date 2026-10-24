@@ -15,6 +15,7 @@ from src.compiler.contracts.enums import (
     SharingTier,
     UnitSource,
 )
+from src.compiler.contracts.investigation import InvestigationResult, UnresolvedIssue
 from src.compiler.contracts.manifests import FileEntry, HandoffManifest, UploadManifest
 from src.compiler.contracts.observation import ObservationId
 from src.compiler.contracts.plans import ParsePlan, PlanOperation
@@ -64,4 +65,6 @@ __all__ = [
     "FileEntry",
     "UploadManifest",
     "HandoffManifest",
+    "InvestigationResult",
+    "UnresolvedIssue",
 ]
