@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from apps.api.config import settings
+from apps.api.routers.jobs import router as jobs_router
 from apps.api.routers.uploads import router as uploads_router
 
 app = FastAPI(
@@ -13,6 +14,7 @@ app = FastAPI(
 
 # Register API routers
 app.include_router(uploads_router, prefix="/api/v1")
+app.include_router(jobs_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["System"])

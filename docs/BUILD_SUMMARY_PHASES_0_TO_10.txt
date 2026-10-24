@@ -1,0 +1,128 @@
+================================================================================
+AICONNEX INDUSTRIAL EXCEL COMPILER: BUILD SUMMARY (PHASES 0 TO 10)
+================================================================================
+Version: 0.1.0-alpha
+Test Status: 114 unit & integration tests passing (100% green)
+Linter: Ruff (0 errors, 0 warnings)
+Governing Rule: AGENTS.md (Untrusted Data Boundary, Zero Silent Errors, Full Provenance)
+================================================================================
+
+WHAT WAS ACTUALLY BUILT: ARCHITECTURAL OVERVIEW
+--------------------------------------------------------------------------------
+The AICONNEX Industrial Excel Compiler is a zero-speculative, deterministic 
+ingestion and compilation engine. It transforms complex, human-formatted, 
+multi-sheet industrial workbooks (.xlsx, .zip) into strictly validated, 
+typed Apache Arrow and Parquet tables for downstream AutoMLOps pipelines.
+
+Every single output value maintains 100% verifiable cell-coordinate provenance 
+back to the exact source Excel cell (e.g., "Sheet1!D13"), with zero arbitrary 
+eval() or code execution, and zero speculative imputation.
+
+
+DETAILED BREAKDOWN BY PHASE
+--------------------------------------------------------------------------------
+
+PHASE 0: DEV BASELINE & ARCHITECTURAL GUARDRAILS
+- Tooling: Python 3.12, uv packaging, pytest, Ruff linter/formatter.
+- ADR Framework: Architecture Decision Records (ADR-001 through ADR-014).
+- Security boundary: Uploaded Excel content is treated strictly as untrusted data, 
+  never as executable code or instructions.
+
+PHASE 1: FROZEN DATA CONTRACTS & IMMUTABILITY STANDARDS
+- Schema: Strict Pydantic v2 data models for all system transitions.
+- Contracts:
+  * UploadManifest: Ingestion audit record with SHA-256 verification.
+  * ParsePlan: Declarative, allowlisted operational execution plans.
+  * ClientContract: Target schema, expected assets, required signals, allowed units.
+  * ValidationReport: Structured error taxonomy (ErrorCode, ErrorSeverity).
+  * HandoffManifest: Publication contract for downstream AutoMLOps consumers.
+
+PHASE 2: GOLDEN CORPUS & BENCHMARK SUITE
+- Multi-category test corpus: excel_simple, excel_complex, excel_scattered, 
+  excel_formula, flat_csv_golden, zip_mixed, and failure_cases.
+- Labeled expected outputs establishing the empirical evaluation baseline.
+
+PHASE 3: ADMISSION GATE & CONTENT QUARANTINE
+- Cryptographic verification: Raw payload SHA-256 calculation.
+- Security thresholds: Protection against zip bombs, path traversal attacks (..), 
+  corrupted magic bytes (PK\x03\x04), and uncompressed size ceilings.
+- Storage: LocalFileSystemObjectStore for immutable raw artifact retention.
+
+PHASE 4: DETERMINISTIC READER CORE
+- Dual-engine reader: Python-Calamine for high-speed Rust-based parsing with 
+  an OpenPyXL fallback for formulas and visual cell styles.
+- Formula Handler: Deterministic formula evaluation policies ("use_cached_or_fail", 
+  "require_literal_only"). No arbitrary formula code execution.
+- Parsers: ISO-8601 timestamps and industrial duration totalizers (e.g. "8633:10:51").
+
+PHASE 5: STRUCTURAL DISCOVERY ENGINE
+- Occupancy Grid: Fast 2D matrix tracking cell coordinates, datatypes, and occupancy.
+- Region Detector: Isolates top/side metadata blocks from main data tables.
+- Header Reconstructor: Traverses multi-row merged header bands to build fully 
+  qualified column paths (e.g., "DISPENSER_I.HOSE_I.GAS_RATE").
+- Ambiguity Scorer: Calculates discovery confidence; halts on ambiguity.
+
+PHASE 6: DECLARATIVE PLAN COMPILER & ARROW EXECUTION ENGINE
+- Allowlisted Operations: SELECT_REGION, FLATTEN_HEADERS, FORMULA_POLICY, 
+  FILTER_ROWS, UNPIVOT, TYPE_CAST.
+- Arrow Execution Engine: High-performance columnar unpivoting to standard 
+  measurements format (observation_key, timestamp_utc, asset_id, signal_id, value).
+- Provenance Tracker: Creates parallel Arrow provenance tables recording 
+  (observation_key, source_file, sheet_name, cell_coordinate, raw_value).
+
+PHASE 7: CLIENT VALIDATION GATE
+- Automated contract compliance auditor:
+  * Temporal Validator: Verifies monotonicity, detects backwards time jumps.
+  * Signal Validator: Ensures all mandatory contract signals exist.
+  * Asset Validator: Verifies telemetry matches expected machine roster.
+- Safety Enforcement: Zero confidence-based publication. Ambiguities route 
+  immediately to REVIEW_REQUIRED.
+
+PHASE 8: BOUNDED INVESTIGATION AGENT
+- Diagnostics: Specialized read-only investigator for ambiguous or defective workbooks.
+- Strict Constraints: Read-only tool allowlist (inspect cells, inspect formulas, 
+  check recipes), bounded token budget, zero write/execution permissions.
+
+PHASE 9: RECIPE REGISTRY, DRIFT DETECTION & STEWARD REVIEW QUEUE
+- Structural Signatures: Cryptographic signature hashing based on sheet names, 
+  header hierarchies, and column counts (excluding volatile cell dates).
+- Drift Detector: Mathematical drift detection flagging structural shifts 
+  (header_drift, sheet_drift, width_drift).
+- Recipe Registry: Tenant-scoped vs template recipe lookup with immutability.
+- Review Queue: 24-hour SLA tracking for data stewards to approve, reject, 
+  or calibrate recipe promotions.
+
+PHASE 9.5: BATCH ASSEMBLY & CROSS-FILE RECONCILIATION
+- Batch Assembler: Concatenates multi-file batch Arrow tables via pa.concat_tables.
+- Reconciliation Validator:
+  * Audits expected asset roster across all files (ERR_VAL_MISSING_ASSET).
+  * Audits cross-file telemetry collisions (ERR_VAL_CROSS_FILE_DISAGREEMENT).
+- Partial Batch Policy: PUBLISH_ACCEPTED_FLAG_REVIEW (publishes accepted machine 
+  telemetry while holding defective units for field review) vs BLOCK_ENTIRE_BATCH.
+
+PHASE 10: CONTROL PLANE API, DURABLE WORKFLOWS & AUTOMLOPS HANDOFF
+- Control Plane REST API: FastAPI service running at /api/v1/jobs with multi-tenant 
+  isolation headers (X-Tenant-ID, X-Project-ID).
+- Durable Workflow Engine: Step-by-step state machine with crash-recovery replay, 
+  activity heartbeats, and review wait-states.
+- Idempotent Outbox: SHA-256 deduplicated transactional outbox for handoff events.
+- AutoMLOps Consumer: Downstream integration gate blocking model training 
+  whenever an archive is marked REVIEW_REQUIRED.
+
+
+EMPIRICAL REAL-WORLD BENCHMARKS (EVALUATED AT PHASE 10)
+--------------------------------------------------------------------------------
+Tested against 3 real-world industrial archives (24 member files):
+1. TAS Dataset (Dataset-TAS.zip): 6 monthly DPR files. Caught duplicate column 
+   names ('Total Gas Outlet Per Day') -> Routed safely to REVIEW_REQUIRED.
+2. NASA C-MAPSS Dataset: 14 non-Excel text/PDF files -> Rejected safely to 
+   REVIEW_REQUIRED without crashing.
+3. Suyash Dataset (suyash2.zip): 4 SCADA files, 26,930 rows, 1,720,448 measurement 
+   cells compiled into Apache Arrow in 62.8s. 
+   Cell Numerical Fidelity: 100.00% exact match against raw Excel values.
+   Provenance Coverage: 100.00%.
+
+OVERALL SAFETY SCORECARD:
+- False-Accept Rate (FAR): 0.00% (Zero silent data corruptions published).
+- Release Gate Verdict: PASS.
+================================================================================

@@ -15,9 +15,9 @@ from src.compiler.contracts.enums import PlanOperationType
 from src.compiler.contracts.plans import ParsePlan
 from src.compiler.contracts.structure import CellDetail
 from src.compiler.execution.provenance import ProvenanceTracker
+from src.compiler.readers import get_reader
 from src.compiler.readers.base import ExcelReader
 from src.compiler.readers.date_duration import parse_duration_to_seconds
-from src.compiler.readers.openpyxl_reader import OpenpyxlReader
 from src.compiler.structure.header_reconstructor import HeaderReconstructor
 from src.compiler.structure.occupancy_grid import OccupancyGrid
 
@@ -64,7 +64,7 @@ class PlanExecutor:
     """Executes declarative ParsePlans via allowlisted deterministic operations."""
 
     def __init__(self, reader: ExcelReader | None = None) -> None:
-        self.reader = reader or OpenpyxlReader()
+        self.reader = reader or get_reader()
 
     def execute(
         self,
@@ -72,6 +72,7 @@ class PlanExecutor:
         plan: ParsePlan,
         source_filename: str | None = None,
         default_asset_id: str = "DEFAULT_ASSET",
+        dry_run: bool = False,
     ) -> ExecutionResult:
         """Run compiled plan against source spreadsheet and emit Arrow tables."""
         if isinstance(source, Path):
@@ -285,54 +286,112 @@ class PlanExecutor:
         path_to_col: dict[str, int],
     ) -> datetime.datetime:
         """Resolve and combine date and time columns into UTC datetime."""
-        date_val: Any = None
-        time_val: Any = None
+        date_col_name: str | None = None
+        time_col_name: str | None = None
+        combined_col_name: str | None = None
 
         for var_name in id_vars:
-            col = path_to_col.get(var_name)
-            cell = row_cells.get(col) if col is not None else None
-            if not cell or cell.raw_value is None:
-                continue
-
-            val = cell.raw_value
             upper_name = var_name.upper()
 
-            if "TIME" in upper_name and "DATE" not in upper_name:
-                time_val = val
+            # Check if this single column contains both DATE and TIME tokens or timestamp markers
+            if ("DATE" in upper_name and "TIME" in upper_name) or any(
+                k in upper_name for k in ("TIMESTAMP", "DATETIME", "UTC")
+            ):
+                if combined_col_name is None:
+                    combined_col_name = var_name
+            elif "TIME" in upper_name and "DATE" not in upper_name:
+                if time_col_name is None:
+                    time_col_name = var_name
             elif "DATE" in upper_name and "TIME" not in upper_name:
-                date_val = val
-            elif any(k in upper_name for k in ("TIMESTAMP", "DATETIME", "UTC")):
-                date_val = val
+                if date_col_name is None:
+                    date_col_name = var_name
 
-        # Handle composite date + time (e.g. simple_table_ltds.xlsx)
-        if date_val is not None and time_val is not None:
-            date_str = str(date_val).strip()
-            time_str = str(time_val).strip()
-            dt_str = (
-                f"{date_str}T{time_str}Z"
-                if not time_str.endswith("Z")
-                else f"{date_str}T{time_str}"
-            )
-            try:
-                dt = datetime.datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                return dt if dt.tzinfo else dt.replace(tzinfo=datetime.UTC)
-            except ValueError:
-                pass
+        # 1. If a combined column exists, parse it directly as a single datetime
+        if combined_col_name is not None:
+            col = path_to_col.get(combined_col_name)
+            cell = row_cells.get(col) if col is not None else None
+            if cell and cell.raw_value is not None:
+                dt = self._parse_iso_or_datetime(cell.raw_value)
+                if dt is not None:
+                    return dt
 
-        # Handle single timestamp column
-        if date_val is not None:
-            if isinstance(date_val, datetime.datetime):
-                return date_val if date_val.tzinfo else date_val.replace(tzinfo=datetime.UTC)
-            try:
-                val_str = str(date_val).strip()
-                if not val_str.endswith("Z") and "+" not in val_str:
-                    val_str += "+00:00"
-                return datetime.datetime.fromisoformat(val_str.replace("Z", "+00:00"))
-            except ValueError:
-                pass
+        # 2. If separate date and time columns exist on distinct columns
+        if (
+            date_col_name is not None
+            and time_col_name is not None
+            and date_col_name != time_col_name
+        ):
+            col_d = path_to_col.get(date_col_name)
+            col_t = path_to_col.get(time_col_name)
+            cell_d = row_cells.get(col_d) if col_d is not None else None
+            cell_t = row_cells.get(col_t) if col_t is not None else None
+            if cell_d and cell_d.raw_value is not None and cell_t and cell_t.raw_value is not None:
+                d_val = cell_d.raw_value
+                t_val = cell_t.raw_value
+                if isinstance(d_val, datetime.datetime) and (
+                    d_val.hour != 0 or d_val.minute != 0 or d_val.second != 0
+                ):
+                    return d_val if d_val.tzinfo else d_val.replace(tzinfo=datetime.UTC)
+                date_str = str(d_val).split("T")[0].split(" ")[0].strip()
+                time_str = str(t_val).strip()
+                if isinstance(t_val, datetime.time):
+                    time_str = t_val.isoformat()
+                dt_str = (
+                    f"{date_str}T{time_str}Z"
+                    if not time_str.endswith("Z")
+                    else f"{date_str}T{time_str}"
+                )
+                try:
+                    dt = datetime.datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                    return dt if dt.tzinfo else dt.replace(tzinfo=datetime.UTC)
+                except ValueError:
+                    pass
+
+        # 3. Fallback to date column only if present
+        if date_col_name is not None:
+            col = path_to_col.get(date_col_name)
+            cell = row_cells.get(col) if col is not None else None
+            if cell and cell.raw_value is not None:
+                dt = self._parse_iso_or_datetime(cell.raw_value)
+                if dt is not None:
+                    return dt
 
         # Fallback to epoch 1970
         return datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
+
+    def _parse_iso_or_datetime(self, val: Any) -> datetime.datetime | None:
+        """Parse scalar raw value into UTC datetime."""
+        if val is None:
+            return None
+        if isinstance(val, datetime.datetime):
+            return val if val.tzinfo else val.replace(tzinfo=datetime.UTC)
+        if isinstance(val, datetime.date):
+            return datetime.datetime(val.year, val.month, val.day, tzinfo=datetime.UTC)
+
+        val_str = str(val).strip()
+        if not val_str:
+            return None
+
+        # Normalize space to T
+        normalized = val_str.replace(" ", "T")
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+
+        try:
+            dt = datetime.datetime.fromisoformat(normalized)
+            return dt if dt.tzinfo else dt.replace(tzinfo=datetime.UTC)
+        except ValueError:
+            pass
+
+        # Try appending UTC timezone if no tz present
+        if "+" not in normalized and "-" not in normalized[10:]:
+            try:
+                dt = datetime.datetime.fromisoformat(normalized + "+00:00")
+                return dt
+            except ValueError:
+                pass
+
+        return None
 
     def _resolve_asset(
         self,
