@@ -29,6 +29,8 @@ from src.compiler.contracts.structure import (
 )
 from src.compiler.contracts.validation import (
     BatchValidationReport,
+    PlanValidationIssue,
+    PlanValidationReport,
     ValidationErrorItem,
     ValidationReport,
 )
@@ -62,6 +64,8 @@ __all__ = [
     "ValidationErrorItem",
     "ValidationReport",
     "BatchValidationReport",
+    "PlanValidationIssue",
+    "PlanValidationReport",
     "FileEntry",
     "UploadManifest",
     "HandoffManifest",

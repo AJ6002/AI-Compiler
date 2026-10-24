@@ -34,6 +34,7 @@ from src.compiler.storage.object_store import ObjectStore
 from src.compiler.structure.discovery_engine import RuleBasedDiscoveryEngine
 from src.compiler.structure.types import DiscoveredLayout
 from src.compiler.validation.gate import ClientValidationGate
+from src.compiler.validation.plan_validator import PlanValidator
 from src.compiler.workflows.errors import DeterministicSourceFault
 from src.compiler.workflows.models import HandoffEvent, JobRecord
 from src.compiler.workflows.outbox import HandoffOutbox
@@ -53,6 +54,7 @@ class IngestionActivities:
         compiler: PlanCompiler | None = None,
         executor: PlanExecutor | None = None,
         validation_gate: ClientValidationGate | None = None,
+        plan_validator: PlanValidator | None = None,
         batch_assembler: BatchAssembler | None = None,
     ) -> None:
         self.store = object_store
@@ -64,6 +66,9 @@ class IngestionActivities:
         self.compiler = compiler or PlanCompiler()
         self.executor = executor or PlanExecutor(reader=self.reader)
         self.gate = validation_gate or ClientValidationGate()
+        self.plan_validator = plan_validator or PlanValidator(
+            executor=self.executor, gate=self.gate, reader=self.reader
+        )
         self.batch_assembler = batch_assembler or BatchAssembler()
 
     def admission_activity(
@@ -180,7 +185,7 @@ class IngestionActivities:
                     resolved.append((fname, fbytes, layout, recipe.plan, None))
                     continue
 
-            # No recipe or drift detected -> compile fresh plan and enqueue for review
+            # No recipe or drift detected -> compile fresh plan and validate
             asset_id = layout.sheet_name
             plan = self.compiler.compile(
                 layout=layout,
@@ -188,7 +193,39 @@ class IngestionActivities:
                 project_id=job.project_id,
                 default_asset_id=asset_id,
             )
-            resolved.append((fname, fbytes, layout, plan, None))
+
+            # Pass through 3-level PlanValidator before acceptance
+            val_rep = self.plan_validator.validate(
+                plan=plan,
+                source=fbytes,
+                layout=layout,
+                source_filename=fname,
+                default_asset_id=asset_id,
+            )
+
+            if val_rep.status != JobResultState.ACCEPTED:
+                review_item = self.review_queue.enqueue(
+                    tenant_id=job.tenant_id,
+                    project_id=job.project_id,
+                    target_object_id=fname,
+                    sheet_name=layout.sheet_name,
+                    discovered_headers=[c.path for t in layout.tables for c in t.columns],
+                    candidate_recipe_id=None,
+                    validation_errors=[
+                        ValidationErrorItem(
+                            code=iss.code,
+                            severity=ErrorSeverity.ERROR,
+                            message=f"[{iss.level}] {iss.message}",
+                            sheet=layout.sheet_name,
+                            cell_coordinate=iss.source_reference,
+                            remediation="Review proposed plan transformations.",
+                        )
+                        for iss in val_rep.issues
+                    ],
+                )
+                resolved.append((fname, fbytes, layout, None, review_item))
+            else:
+                resolved.append((fname, fbytes, layout, plan, None))
 
         return resolved
 
