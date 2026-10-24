@@ -6,6 +6,7 @@ from src.compiler.investigation.agent import (
     InvestigationBudget,
     InvestigationResult,
 )
+from src.compiler.investigation.container_spec import HardenedContainerConfig
 from src.compiler.investigation.contract import to_review_item, unwrap_for_executor
 from src.compiler.investigation.model_client import (
     DeterministicFakeModelClient,
@@ -18,6 +19,11 @@ from src.compiler.investigation.residency import (
     ResidencyPolicy,
     check_model_residency_permission,
 )
+from src.compiler.investigation.supervisor import (
+    SandboxMetadata,
+    SandboxOutcome,
+    SandboxSupervisor,
+)
 from src.compiler.investigation.tools import InvestigationToolbox
 
 __all__ = [
@@ -27,6 +33,10 @@ __all__ = [
     "InvestigationBudget",
     "InvestigationResult",
     "InvestigationToolbox",
+    "HardenedContainerConfig",
+    "SandboxSupervisor",
+    "SandboxOutcome",
+    "SandboxMetadata",
     "ModelClient",
     "ModelMessage",
     "ModelResidency",
