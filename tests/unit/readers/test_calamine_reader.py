@@ -40,12 +40,12 @@ def test_calamine_vs_openpyxl_parity(fixtures_dir: Path) -> None:
     for coord, c_cell in c_cells.items():
         assert coord in o_cells, f"Coordinate {coord} missing from OpenpyxlReader output"
         o_cell = o_cells[coord]
-        assert (
-            c_cell.raw_value == o_cell.raw_value
-        ), f"Raw value mismatch at {coord}: {c_cell.raw_value} != {o_cell.raw_value}"
-        assert (
-            c_cell.data_type == o_cell.data_type
-        ), f"Data type mismatch at {coord}: {c_cell.data_type} != {o_cell.data_type}"
+        assert c_cell.raw_value == o_cell.raw_value, (
+            f"Raw value mismatch at {coord}: {c_cell.raw_value} != {o_cell.raw_value}"
+        )
+        assert c_cell.data_type == o_cell.data_type, (
+            f"Data type mismatch at {coord}: {c_cell.data_type} != {o_cell.data_type}"
+        )
         assert c_cell.row == o_cell.row
         assert c_cell.column == o_cell.column
 
@@ -69,16 +69,14 @@ def test_calamine_speed_advantage(tmp_path: Path) -> None:
     # Time Calamine
     t0 = time.perf_counter()
     c_count = sum(
-        len(batch)
-        for batch in calamine_reader.extract_sheet_cells(bench_file, "BenchSheet")
+        len(batch) for batch in calamine_reader.extract_sheet_cells(bench_file, "BenchSheet")
     )
     calamine_duration = time.perf_counter() - t0
 
     # Time Openpyxl
     t0 = time.perf_counter()
     o_count = sum(
-        len(batch)
-        for batch in openpyxl_reader.extract_sheet_cells(bench_file, "BenchSheet")
+        len(batch) for batch in openpyxl_reader.extract_sheet_cells(bench_file, "BenchSheet")
     )
     openpyxl_duration = time.perf_counter() - t0
 

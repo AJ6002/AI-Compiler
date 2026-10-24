@@ -75,7 +75,6 @@ def to_review_item(result: InvestigationResult, job_id: str) -> ReviewItem:
                     params={"header_rows": [1]},
                 )
             ],
-            created_by=f"agent:{result.agent_id}:{result.agent_version}",
         )
 
     sig = SignatureGenerator.create(

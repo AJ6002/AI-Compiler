@@ -16,7 +16,7 @@ In the AICONNEX industrial compilation pipeline, deterministic discovery handles
 ## Decision
 1. **Envelope Wrapper Pattern (`InvestigationResult`):**
    - We introduce `InvestigationResult` in `src/compiler/contracts/investigation.py` as an immutable wrapper around `ParsePlan`.
-   - `ParsePlan` remains purely declarative, frozen, and free of model reasoning or telemetry.
+   - ParsePlan remains the sole contract consumed by PlanExecutor; InvestigationResult is a boundary artifact that carries the plan plus its rationale.
 2. **First-Class Status State:**
    - `status: Literal["PLAN_PROPOSED", "REVIEW_REQUIRED"]` is an explicit, first-class state.
    - It is **not** inferred from `parse_plan is None`. In future iterations, an agent may propose a plan while flagging advisory issues, or produce evidence without a plan.

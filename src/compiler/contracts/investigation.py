@@ -78,7 +78,5 @@ class InvestigationResult(BaseContract):
             if self.parse_plan is not None:
                 raise ValueError("status 'REVIEW_REQUIRED' requires parse_plan to be None")
             if not self.unresolved:
-                raise ValueError(
-                    "status 'REVIEW_REQUIRED' requires at least one UnresolvedIssue"
-                )
+                raise ValueError("status 'REVIEW_REQUIRED' requires at least one UnresolvedIssue")
         return self

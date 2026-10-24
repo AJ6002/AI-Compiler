@@ -24,7 +24,6 @@ def create_sample_plan() -> ParsePlan:
                 params={"header_rows": [1]},
             )
         ],
-        created_by="agent:claude-3-7-sonnet:1.0.0",
     )
 
 
@@ -248,25 +247,23 @@ def test_review_queue_accepts_review_item_directly() -> None:
     assert pending[0].sheet_name == "Telemetry"
 
 
-def test_parse_plan_created_by_round_trip() -> None:
-    plan = ParsePlan(
-        plan_id="plan_agent_origin",
-        tenant_id="tenant_alpha",
-        project_id="proj_beta",
-        target_sheet="Telemetry",
-        operations=[
-            PlanOperation(
-                op=PlanOperationType.FLATTEN_HEADERS,
-                params={"header_rows": [1]},
-            )
-        ],
-        created_by="agent:test",
-    )
-
-    assert plan.created_by == "agent:test"
-    dumped = plan.model_dump_json()
-    reloaded = ParsePlan.model_validate_json(dumped)
-    assert reloaded.created_by == "agent:test"
+def test_parse_plan_is_unchanged_and_forbids_extra_fields() -> None:
+    """Assert ParsePlan contract is frozen and unchanged, rejecting extra fields like created_by."""
+    with pytest.raises(ValidationError) as exc_info:
+        ParsePlan(
+            plan_id="plan_agent_origin",
+            tenant_id="tenant_alpha",
+            project_id="proj_beta",
+            target_sheet="Telemetry",
+            operations=[
+                PlanOperation(
+                    op=PlanOperationType.FLATTEN_HEADERS,
+                    params={"header_rows": [1]},
+                )
+            ],
+            created_by="agent:test",  # type: ignore[call-arg]
+        )
+    assert "Extra inputs are not permitted" in str(exc_info.value)
 
 
 def test_model_json_schema_validity() -> None:
@@ -279,6 +276,14 @@ def test_model_json_schema_validity() -> None:
     assert "unresolved" in schema["properties"]
     assert "agent_id" in schema["properties"]
     assert "agent_version" in schema["properties"]
+
+    # Draft 2020-12 structural assertions
+    assert "$defs" in schema
+    assert "UnresolvedIssue" in schema["$defs"]
+    assert "ParsePlan" in schema["$defs"]
+    assert isinstance(schema["required"], list)
+    for req in ("status", "agent_id", "agent_version"):
+        assert req in schema["required"]
 
     # Verify JSON serializability
     schema_json = json.dumps(schema)

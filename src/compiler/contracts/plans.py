@@ -30,7 +30,3 @@ class ParsePlan(BaseContract):
         min_length=1,
         description="Ordered sequence of allowlisted transformation operations.",
     )
-    created_by: str | None = Field(
-        default=None,
-        description="Origin of plan: 'discovery', 'recipe:<id>', 'agent:<id>', or 'human:<id>'.",
-    )
